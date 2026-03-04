@@ -7,14 +7,14 @@ export class MuapiClient {
     }
 
     getKey() {
-        const key = localStorage.getItem('muapi_key');
-        if (!key) throw new Error('API Key missing. Please set it in Settings.');
+        const key = localStorage.getItem('muapi_key') || import.meta.env.MUAPI_KEY;
+        if (!key) throw new Error('API Key missing. Set MUAPI_KEY in .env or add it in Settings.');
         return key;
     }
 
     getFalKey() {
-        const key = localStorage.getItem('fal_key');
-        if (!key) throw new Error('fal.ai API Key missing. Please set it in Settings.');
+        const key = localStorage.getItem('fal_key') || import.meta.env.FAL_AI_API_KEY;
+        if (!key) throw new Error('fal.ai API Key missing. Set FAL_AI_API_KEY in .env or add it in Settings.');
         return key;
     }
 
