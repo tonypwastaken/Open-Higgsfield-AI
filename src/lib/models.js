@@ -2061,6 +2061,8 @@ export const t2iModels = [
     "id": "seedream-5.0",
     "name": "Seedream 5.0",
     "endpoint": "seedream-5.0",
+    "provider": "fal",
+    "falEndpoint": "fal-ai/bytedance/seedream/v5/lite/text-to-image",
     "family": "seedream",
     "inputs": {
       "prompt": {

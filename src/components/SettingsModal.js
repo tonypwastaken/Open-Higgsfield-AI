@@ -37,6 +37,18 @@ export function SettingsModal(onClose) {
     input.style.width = '100%';
     input.style.marginBottom = '1rem';
 
+    const falLabel = document.createElement('label');
+    falLabel.textContent = 'fal.ai API Key';
+    falLabel.className = 'block text-sm text-secondary mb-2';
+
+    const falInput = document.createElement('input');
+    falInput.type = 'password';
+    falInput.className = 'w-full mb-4 p-2 rounded bg-input border border-border-color';
+    falInput.value = localStorage.getItem('fal_key') || '';
+    falInput.placeholder = 'fal_key_...';
+    falInput.style.width = '100%';
+    falInput.style.marginBottom = '1rem';
+
     const btnContainer = document.createElement('div');
     btnContainer.className = 'flex justify-end gap-2';
     btnContainer.style.display = 'flex';
@@ -60,19 +72,23 @@ export function SettingsModal(onClose) {
 
     saveBtn.onclick = () => {
         const key = input.value.trim();
-        if (key) {
-            localStorage.setItem('muapi_key', key);
-            alert('API Key saved!');
-            document.body.removeChild(overlay);
-            if (onClose) onClose();
-        } else {
-            alert('Please enter a valid key');
+        const falKey = falInput.value.trim();
+        if (!key && !falKey) {
+            alert('Please enter at least one API key');
+            return;
         }
+        if (key) localStorage.setItem('muapi_key', key);
+        if (falKey) localStorage.setItem('fal_key', falKey);
+        alert('API Key(s) saved!');
+        document.body.removeChild(overlay);
+        if (onClose) onClose();
     };
 
     modal.appendChild(title);
     modal.appendChild(label);
     modal.appendChild(input);
+    modal.appendChild(falLabel);
+    modal.appendChild(falInput);
 
     btnContainer.appendChild(cancelBtn);
     btnContainer.appendChild(saveBtn);

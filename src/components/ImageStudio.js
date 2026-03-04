@@ -1,6 +1,7 @@
 import { muapi } from '../lib/muapi.js';
 import {
     t2iModels, getAspectRatiosForModel, getResolutionsForModel, getQualityFieldForModel,
+    getModelById,
     i2iModels, getAspectRatiosForI2IModel, getResolutionsForI2IModel, getQualityFieldForI2IModel,
     getMaxImagesForI2IModel
 } from '../lib/models.js';
@@ -560,8 +561,10 @@ export function ImageStudio() {
             }
         }
 
-        const apiKey = localStorage.getItem('muapi_key');
-        if (!apiKey) {
+        const modelInfo = getModelById(selectedModel);
+        const isFalModel = modelInfo?.provider === 'fal';
+        const requiredKey = isFalModel ? localStorage.getItem('fal_key') : localStorage.getItem('muapi_key');
+        if (!requiredKey) {
             AuthModal(() => generateBtn.click());
             return;
         }

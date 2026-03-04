@@ -7,9 +7,123 @@ export class MuapiClient {
     }
 
     getKey() {
-        const key = localStorage.getItem('muapi_key');
-        if (!key) throw new Error('API Key missing. Please set it in Settings.');
+        const key = localStorage.getItem('muapi_key') || import.meta.env.MUAPI_KEY;
+        if (!key) throw new Error('API Key missing. Set MUAPI_KEY in .env or add it in Settings.');
         return key;
+    }
+
+    getFalKey() {
+        const key = localStorage.getItem('fal_key') || import.meta.env.FAL_AI_API_KEY;
+        if (!key) throw new Error('fal.ai API Key missing. Set FAL_AI_API_KEY in .env or add it in Settings.');
+        return key;
+    }
+
+    /**
+     * Maps a generic aspect_ratio string to a fal.ai image_size enum value.
+     */
+    mapAspectRatioToFalImageSize(ar) {
+        const map = {
+            '1:1':  'square_hd',
+            '16:9': 'landscape_16_9',
+            '9:16': 'portrait_16_9',
+            '4:3':  'landscape_4_3',
+            '3:4':  'portrait_4_3',
+            '2:3':  'portrait_4_3',
+            '3:2':  'landscape_4_3',
+            '21:9': 'landscape_16_9',
+        };
+        return map[ar] || 'square_hd';
+    }
+
+    /**
+     * Generates an image via fal.ai using the queue/poll pattern.
+     */
+    async generateImageFal(params, modelInfo) {
+        const key = this.getFalKey();
+        const falEndpoint = modelInfo.falEndpoint;
+        const falBase = import.meta.env.DEV ? '/fal' : 'https://queue.fal.run';
+        const submitUrl = `${falBase}/${falEndpoint}`;
+
+        const payload = { prompt: params.prompt };
+        if (params.aspect_ratio) {
+            payload.image_size = this.mapAspectRatioToFalImageSize(params.aspect_ratio);
+        }
+        if (params.seed && params.seed !== -1) {
+            payload.seed = params.seed;
+        }
+
+        console.log('[Fal] Requesting:', submitUrl);
+        console.log('[Fal] Payload:', payload);
+
+        const submitRes = await fetch(submitUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Key ${key}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!submitRes.ok) {
+            const errText = await submitRes.text();
+            console.error('[Fal] Submit Error:', errText);
+            throw new Error(`fal.ai Request Failed: ${submitRes.status} ${submitRes.statusText} - ${errText.slice(0, 200)}`);
+        }
+
+        const submitData = await submitRes.json();
+        console.log('[Fal] Submit Response:', submitData);
+
+        const requestId = submitData.request_id;
+        if (!requestId) {
+            // Direct result (no queue)
+            const imageUrl = submitData.images?.[0]?.url;
+            return { ...submitData, url: imageUrl };
+        }
+
+        // Poll status — use the URLs returned by fal.ai in the submit response
+        console.log('[Fal] Polling for result, request_id:', requestId);
+        const statusUrl = submitData.status_url || `${falBase}/${falEndpoint}/requests/${requestId}/status`;
+        const resultUrl = submitData.response_url || `${falBase}/${falEndpoint}/requests/${requestId}`;
+
+        for (let attempt = 1; attempt <= 90; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            console.log(`[Fal] Polling attempt ${attempt}/90...`);
+
+            const statusRes = await fetch(statusUrl, {
+                headers: { 'Authorization': `Key ${key}` }
+            });
+
+            if (!statusRes.ok) {
+                console.warn(`[Fal] Status poll error (${statusRes.status})`);
+                if (statusRes.status >= 500) continue;
+                const errText = await statusRes.text();
+                throw new Error(`fal.ai Poll Failed: ${statusRes.status} - ${errText.slice(0, 100)}`);
+            }
+
+            const statusData = await statusRes.json();
+            console.log('[Fal] Status:', statusData.status);
+
+            if (statusData.status === 'COMPLETED') {
+                const resultRes = await fetch(resultUrl, {
+                    headers: { 'Authorization': `Key ${key}` }
+                });
+                if (!resultRes.ok) {
+                    const errText = await resultRes.text();
+                    throw new Error(`fal.ai Result Fetch Failed: ${resultRes.status} - ${errText.slice(0, 100)}`);
+                }
+                const result = await resultRes.json();
+                console.log('[Fal] Result:', result);
+                const imageUrl = result.images?.[0]?.url;
+                console.log('[Fal] Image URL:', imageUrl);
+                return { ...result, url: imageUrl };
+            }
+
+            if (statusData.status === 'FAILED') {
+                throw new Error(`fal.ai generation failed: ${statusData.error || 'Unknown error'}`);
+            }
+        }
+
+        throw new Error('fal.ai generation timed out after polling.');
     }
 
     /**
@@ -25,10 +139,16 @@ export class MuapiClient {
      * @param {string} [params.image_url] - If present, treats as Image-to-Image
      */
     async generateImage(params) {
+        // Resolve model info first so we can route to fal if needed
+        const modelInfo = getModelById(params.model);
+
+        if (modelInfo?.provider === 'fal') {
+            return this.generateImageFal(params, modelInfo);
+        }
+
         const key = this.getKey();
 
         // Resolve endpoint from model definition
-        const modelInfo = getModelById(params.model);
         const endpoint = modelInfo?.endpoint || params.model;
         const url = `${this.baseUrl}/api/v1/${endpoint}`;
 
